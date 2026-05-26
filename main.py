@@ -25,9 +25,23 @@ Thread(target=run).start()
 
 bot = TelegramClient('caption_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
+# یک لیست موقت برای ذخیره آیدی پیام‌های پردازش شده
+processed_messages = set()
+
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
     if event.message.video:
+        # جلوگیری از ارسال پیام تکراری
+        if event.message.id in processed_messages:
+            return
+        
+        # اضافه کردن آیدی پیام به لیست تکراری‌ها
+        processed_messages.add(event.message.id)
+        
+        # اگر لیست خیلی بزرگ شد، برای صرفه‌جویی در حافظه آن را خالی کن
+        if len(processed_messages) > 100:
+            processed_messages.clear()
+
         caption = event.message.text or ""
         
         # الگوی تشخیص آیدی یا لینک
@@ -35,21 +49,22 @@ async def handler(event):
         match = re.search(pattern, caption)
         
         if match:
-            # اگر آیدی یا لینک بود، "کاری از:" را دقیقاً قبل از آن می‌گذارد
             start_idx = match.start()
             caption = caption[:start_idx] + "کاری از: " + caption[start_idx:]
         else:
-            # اگر هیچ آیدی یا لینکی نبود
             if caption:
                 caption = "کاری از: " + caption
             else:
-                caption = "کاری از: " # اگر ویدیو اصلاً کپشن نداشت
+                caption = "کاری از: "
         
-        # اضافه کردن امضا در دو خط پایین‌تر برای همه پیام‌ها
+        # اضافه کردن امضا
         signature = "\n\n🆔 @tadvin_eslami"
         final_caption = caption + signature
         
-        await bot.send_file(TARGET_CHANNEL_ID, event.message.video, caption=final_caption)
+        try:
+            await bot.send_file(TARGET_CHANNEL_ID, event.message.video, caption=final_caption)
+        except Exception as e:
+            print(f"Error: {e}")
 
-print("ربات با موفقیت آپدیت شد!")
+print("ربات ضد تکرار روشن شد!")
 bot.run_until_disconnected()
