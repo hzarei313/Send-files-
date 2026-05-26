@@ -29,17 +29,27 @@ bot = TelegramClient('caption_bot_session', API_ID, API_HASH).start(bot_token=BO
 async def handler(event):
     if event.message.video:
         caption = event.message.text or ""
+        
+        # الگوی تشخیص آیدی یا لینک
         pattern = r'(@\w+|https?://[^\s]+|t\.me/[^\s]+)'
         match = re.search(pattern, caption)
         
         if match:
+            # اگر آیدی یا لینک بود، "کاری از:" را دقیقاً قبل از آن می‌گذارد
             start_idx = match.start()
             caption = caption[:start_idx] + "کاری از: " + caption[start_idx:]
+        else:
+            # اگر هیچ آیدی یا لینکی نبود
+            if caption:
+                caption = "کاری از: " + caption
+            else:
+                caption = "کاری از: " # اگر ویدیو اصلاً کپشن نداشت
         
+        # اضافه کردن امضا در دو خط پایین‌تر برای همه پیام‌ها
         signature = "\n\n🆔 @tadvin_eslami"
         final_caption = caption + signature
         
         await bot.send_file(TARGET_CHANNEL_ID, event.message.video, caption=final_caption)
 
-print("ربات آنلاین شد!")
+print("ربات با موفقیت آپدیت شد!")
 bot.run_until_disconnected()
