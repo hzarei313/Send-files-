@@ -1,7 +1,8 @@
 import re
 import os
+import asyncio
 from telethon import TelegramClient, events
-from telethon.sessions import MemorySession  # تغییر مهم برای هاست‌های ابری
+from telethon.sessions import MemorySession
 from flask import Flask
 from threading import Thread
 from collections import deque
@@ -16,24 +17,21 @@ TARGET_CHANNEL_ID = -1002716670503
 # ---------------------------------------------
 
 app = Flask('')
+processed_messages = deque(maxlen=200)
 
 @app.route('/')
 def home():
-    return "Bot is running perfectly on Render!"
+    return "Web server is active. Checking Telegram client..."
 
 def run_flask():
-    # رندر به طور پیش‌فرض از پورت 10000 استفاده می‌کند
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# اجرای وب‌سرور در ترد جداگانه
-flask_thread = Thread(target=run_flask, daemon=True)
-flask_thread.start()
+# اجرای وب‌سرور فلاسک به صورت ترد جداگانه
+Thread(target=run_flask, daemon=True).start()
 
-# --- بخش تلگرام با سشن موقت حافظه (بدون نیاز به فایل) ---
-bot = TelegramClient(MemorySession(), API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-
-processed_messages = deque(maxlen=200)
+# تعریف کلاینت تلگرام با سشن حافظه
+bot = TelegramClient(MemorySession(), API_ID, API_HASH)
 
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
@@ -63,15 +61,24 @@ async def handler(event):
         final_caption = caption + signature
         
         try:
-            # فوروارد بومی تلگرام (بدون آپلود مجدد فایل)
-            await bot.send_message(
-                TARGET_CHANNEL_ID, 
-                event.message,      
-                caption=final_caption 
-            )
-            print(f"ویدیو با موفقیت فوروارد شد. شناسه: {message_id}")
+            await bot.send_message(TARGET_CHANNEL_ID, event.message, caption=final_caption)
+            print(f"[-] Video forwarded successfully! ID: {message_id}")
         except Exception as e:
-            print(f"خطا در ارسال: {e}")
+            print(f"[!] Error sending message to channel: {e}")
 
-print("ربات هماهنگ‌شده با رندر روشن شد...")
-bot.run_until_disconnected()
+# تابع اصلی برای مدیریت اجرای امن و باثبات تلپاتون
+async def main():
+    print("[*] Starting Telegram client...")
+    try:
+        # متصل شدن و لاگین آسنکرون با توکن ربات
+        await bot.start(bot_token=BOT_TOKEN)
+        print("[+] Telegram client connected and authorized successfully!")
+        
+        # منتظر ماندن برای دریافت پیام‌ها
+        await bot.run_until_disconnected()
+    except Exception as e:
+        print(f"[CRITICAL] Telegram client crashed: {e}")
+
+if __name__ == '__main__':
+    # اجرای چرخه آسنکرون پایتون
+    asyncio.run(main())
