@@ -3,6 +3,7 @@ import os
 from telethon import TelegramClient, events
 from flask import Flask
 from threading import Thread
+from collections import deque
 
 # --- تنظیمات ربات (این مقادیر را تغییر دهید) ---
 API_ID = 36850805        # شماره ای‌پی‌آی شما
@@ -13,58 +14,72 @@ SOURCE_GROUP_ID = -1001323267949  # آیدی عددی گروه مبدا
 TARGET_CHANNEL_ID = -1002716670503  # آیدی عددی کانال مقصد
 # ---------------------------------------------
 
+# وب‌سرور برای زنده نگه داشتن ربات در هاست
 app = Flask('')
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is running perfectly!"
 
 def run():
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
 Thread(target=run).start()
 
+# راه‌اندازی کلاینت تلگرام
 bot = TelegramClient('caption_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# یک لیست موقت برای ذخیره آیدی پیام‌های پردازش شده
-processed_messages = set()
+# استفاده از deque با ظرفیت ثابت ۲۰۰ برای مدیریت پیام‌های تکراری بدون فراموشی آنی
+processed_messages = deque(maxlen=200)
 
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
+    # بررسی اینکه آیا پیام حاوی ویدیو است یا خیر
     if event.message.video:
-        # جلوگیری از ارسال پیام تکراری
-        if event.message.id in processed_messages:
+        message_id = event.message.id
+        
+        # جلوگیری از پردازش پیام‌های تکراری
+        if message_id in processed_messages:
             return
         
-        # اضافه کردن آیدی پیام به لیست تکراری‌ها
-        processed_messages.add(event.message.id)
-        
-        # اگر لیست خیلی بزرگ شد، برای صرفه‌جویی در حافظه آن را خالی کن
-        if len(processed_messages) > 100:
-            processed_messages.clear()
+        processed_messages.append(message_id)
 
+        # دریافت متن کپشن
         caption = event.message.text or ""
         
         # الگوی تشخیص آیدی یا لینک
         pattern = r'(@\w+|https?://[^\s]+|t\.me/[^\s]+)'
-        match = re.search(pattern, caption)
         
-        if match:
-            start_idx = match.start()
+        # پیدا کردن تمام آیدی‌ها و لینک‌های درون متن به صورت لیست
+        matches = list(re.finditer(pattern, caption))
+        
+        if matches:
+            # انتخاب دقیقاً آخرین آیدی یا لینک پیدا شده (تولیدکننده)
+            last_match = matches[-1]
+            start_idx = last_match.start()
+            
+            # تزریق عبارت درست قبل از آخرین آیدی/لینک
             caption = caption[:start_idx] + "کاری از: " + caption[start_idx:]
         else:
+            # اگر هیچ آیدی یا لینکی نبود، عبارت به اول پیام اضافه نمیشه و میره آخر متن
             if caption:
-                caption = "کاری از: " + caption
+                caption = caption + "\n\nکاری از: "
             else:
                 caption = "کاری از: "
         
-        # اضافه کردن امضا
+        # اضافه کردن امضای نهایی شما در انتهای کپشن
         signature = "\n\n🆔 @tadvin_eslami"
         final_caption = caption + signature
         
         try:
-            await bot.send_file(TARGET_CHANNEL_ID, event.message.video, caption=final_caption)
+            # ارسال ویدیو بدون دانلود و آپلود مجدد (مستقیم و آنی روی سرور تلگرام)
+            await bot.send_message(
+                TARGET_CHANNEL_ID, 
+                file=event.message.media, 
+                caption=final_caption
+            )
+            print(f"ویدیو با موفقیت منتقل شد. شناسه پیام: {message_id}")
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"خطا در ارسال فایل: {e}")
 
-print("ربات ضد تکرار روشن شد!")
+print("ربات هوشمند ضد تکرار و ویرایش کپشن فعال شد!")
 bot.run_until_disconnected()
