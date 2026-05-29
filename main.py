@@ -16,24 +16,31 @@ TARGET_CHANNEL_ID = -1002716670503  # آیدی عددی کانال مقصد
 
 # وب‌سرور برای زنده نگه داشتن ربات در هاست
 app = Flask('')
+
 @app.route('/')
 def home():
     return "Bot is running perfectly!"
 
-def run():
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+# اجرای وب‌سرور Flask در یک تابع مجزا برای زنده نگه داشتن ربات
+def run_flask():
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-Thread(target=run).start()
+# ساخت و شروع ترد فلاسک به صورت Daemon جهت جلوگیری از تداخل با تلگرام
+flask_thread = Thread(target=run_flask, daemon=True)
+flask_thread.start()
+
+# --- بخش تلگرام (Telethon) ---
 
 # راه‌اندازی کلاینت تلگرام
 bot = TelegramClient('caption_bot_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# استفاده از deque با ظرفیت ثابت ۲۰۰ برای مدیریت پیام‌های تکراری بدون فراموشی آنی
+# استفاده از deque با ظرفیت ثابت ۲۰۰ برای مدیریت هوشمند پیام‌های تکراری
 processed_messages = deque(maxlen=200)
 
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
-    # بررسی اینکه آیا پیام حاوی ویدیو است یا خیر
+    # این شرط تضمین می‌کند که ربات *فقط و فقط* پیام‌های حاوی ویدیو را پردازش کند
     if event.message.video:
         message_id = event.message.id
         
@@ -43,7 +50,7 @@ async def handler(event):
         
         processed_messages.append(message_id)
 
-        # دریافت متن کپشن
+        # دریافت متن کپشن اصلی ویدیو
         caption = event.message.text or ""
         
         # الگوی تشخیص آیدی یا لینک
@@ -60,7 +67,7 @@ async def handler(event):
             # تزریق عبارت درست قبل از آخرین آیدی/لینک
             caption = caption[:start_idx] + "کاری از: " + caption[start_idx:]
         else:
-            # اگر هیچ آیدی یا لینکی نبود، عبارت به اول پیام اضافه نمیشه و میره آخر متن
+            # اگر هیچ آیدی یا لینکی نبود، عبارت به انتهای متن می‌رود تا ظاهر پیام خراب نشود
             if caption:
                 caption = caption + "\n\nکاری از: "
             else:
@@ -71,13 +78,13 @@ async def handler(event):
         final_caption = caption + signature
         
         try:
-            # ارسال ویدیو بدون دانلود و آپلود مجدد (مستقیم و آنی روی سرور تلگرام)
+            # فوروارد و ارجاع مستقیم ویدیو (بدون دانلود، بدون آپلود و بدون افت کیفیت)
             await bot.send_message(
                 TARGET_CHANNEL_ID, 
-                file=event.message.media, 
-                caption=final_caption
+                event.message,      # ارسال خود شیء پیام به جای فایل خام برای فعال شدن قابلیت فوروارد بومی تلگرام
+                caption=final_caption # جایگذاری کپشن جدید روی ویدیوی فوروارد شده
             )
-            print(f"ویدیو با موفقیت منتقل شد. شناسه پیام: {message_id}")
+            print(f"ویدیو با موفقیت و بدون آپلود منتقل شد. شناسه پیام: {message_id}")
         except Exception as e:
             print(f"خطا در ارسال فایل: {e}")
 
