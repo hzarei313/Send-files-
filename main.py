@@ -53,13 +53,17 @@ async def handler(event):
         final_caption = caption + "\n\n🆔 @tadvin_eslami"
         
         try:
-            await bot.send_message(TARGET_CHANNEL_ID, event.message, caption=final_caption)
-            print(f"[🟢 OK] Video {message_id} forwarded.", flush=True)
+            # --- اصلاح اصلی: تغییر caption به text برای فوروارد بومی ---
+            await bot.send_message(
+                TARGET_CHANNEL_ID, 
+                event.message, 
+                text=final_caption  # تلپاتون برای پیام‌های کامل متن جدید را در text می‌گیرد
+            )
+            print(f"[🟢 OK] Video {message_id} forwarded successfully.", flush=True)
         except Exception as e:
             print(f"[🔴 Error] Cannot forward: {e}", flush=True)
 
 async def main():
-    # روشن کردن پورت وب در اولین قدم تا رندر ربات را فریز نکند
     port = int(os.environ.get('PORT', 10000))
     print(f"[1] Starting Native Web Server on port {port}...", flush=True)
     server = await asyncio.start_server(handle_web_request, '0.0.0.0', port)
@@ -67,11 +71,10 @@ async def main():
     async with server:
         print("[2] Connecting to Telegram API...", flush=True)
         try:
-            # ایجاد تایم‌اوت ۱۵ ثانیه‌ای؛ اگر آی‌پی بلاک باشد، قفل نمی‌کند و خطا می‌دهد
             await asyncio.wait_for(bot.start(bot_token=BOT_TOKEN), timeout=15.0)
             print("[3] Telegram client connected successfully!", flush=True)
         except asyncio.TimeoutError:
-            print("[❌ CRITICAL] Connection to Telegram Timed Out! Render IP is blocked by Telegram.", flush=True)
+            print("[❌ CRITICAL] Connection to Telegram Timed Out!", flush=True)
             return
         except Exception as e:
             print(f"[❌ ERROR] Telegram login failed: {e}", flush=True)
