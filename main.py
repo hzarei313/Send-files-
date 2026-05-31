@@ -1,12 +1,12 @@
 import re
 import os
+import asyncio
 from telethon import TelegramClient, events
-from telethon.sessions import MemorySession # برای جلوگیری از قفل شدن فایل سشن روی هاست
+from telethon.sessions import MemorySession
 from flask import Flask
-from threading import Thread
 from collections import deque
 
-# --- تنظیمات ربات (این مقادیر را تغییر دهید) ---
+# --- تنظیمات ربات (مشخصات شما) ---
 API_ID = 36850805        
 API_HASH = 'f3e90cffb1a5ca214883a0b886ad62b4'  
 BOT_TOKEN = '8968910927:AAGks2FRyPtu49l90LUAktvroaOgZ-8ELOk'  
@@ -16,41 +16,26 @@ TARGET_CHANNEL_ID = -1002716670503
 # ---------------------------------------------
 
 app = Flask('')
-# استفاده از deque برای ذخیره آیدی پیام‌های پردازش شده (جلوگیری از ارسال تکراری)
 processed_messages = deque(maxlen=200)
 
 @app.route('/')
 def home():
-    return "Bot is running efficiently!"
+    return "Bot and Web Server are running perfectly together!"
 
-def run():
-    # رندر پورت را در این متغیر قرار می‌دهد (معمولاً 10000)
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-# اجرای وب‌سرور فلاسک در ترد پس‌زمینه
-Thread(target=run, daemon=True).start()
-
-print("وب‌سرور فعال شد. در حال متصل شدن به تلگرام...")
-
-# استفاده از MemorySession باعث می‌شود ربات روی حافظه موقت اجرا شود و فایل هارد را درگیر نکند
-bot = TelegramClient(MemorySession(), API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+# راه‌اندازی کلاینت تلگرام با سشن حافظه
+bot = TelegramClient(MemorySession(), API_ID, API_HASH)
 
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
-    # ۱. فقط ویدیوها پردازش شوند
     if event.message.video:
         message_id = event.message.id
         
-        # ۲. جلوگیری از پردازش پیام تکراری
         if message_id in processed_messages:
             return
         processed_messages.append(message_id)
         
         caption = event.message.text or ""
         pattern = r'(@\w+|https?://[^\s]+|t\.me/[^\s]+)'
-        
-        # پیدا کردن تمام لینک‌ها و انتخاب آخرین لینک (برای عبارت کاری از)
         matches = list(re.finditer(pattern, caption))
         
         if matches:
@@ -63,20 +48,39 @@ async def handler(event):
             else:
                 caption = "کاری از: "
         
-        # اضافه کردن امضا
         signature = "\n\n🆔 @tadvin_eslami"
         final_caption = caption + signature
         
         try:
-            # ۳. شاه‌کلید اصلی: ارسال خودِ پیام (فوروارد بومی با کپشن جدید بدون آپلود)
-            await bot.send_message(
-                TARGET_CHANNEL_ID, 
-                event.message,       # به جای فایل، خود پیام را می‌فرستیم
-                caption=final_caption # کپشن جدید را روی آن ست می‌کنیم
-            )
-            print(f"[Success] Video {message_id} forwarded without upload!")
+            # فوروارد بومی تلگرام بدون دانلود و آپلود
+            await bot.send_message(TARGET_CHANNEL_ID, event.message, caption=final_caption)
+            print(f"[🟢 Success] Video {message_id} forwarded seamlessly.")
         except Exception as e:
-            print(f"[Error] Failed to forward: {e}")
+            print(f"[🔴 Error] Forwarding failed: {e}")
 
-print("ربات ضد تکرار و بدون آپلود فعال شد و در حال گوش دادن است...")
-bot.run_until_disconnected()
+# تابع اصلی برای مدیریت همزمان فلاسک و تلگرام بدون تداخل تردها
+async def main():
+    print("[*] Starting Telegram client...")
+    await bot.start(bot_token=BOT_TOKEN)
+    print("[+] Telegram client connected successfully!")
+
+    # تنظیم پورت رندر
+    port = int(os.environ.get('PORT', 10000))
+    
+    # راه اندازی فلاسک به صورت آسنکرون بدون نیاز به Threading سنتی
+    from hypercorn.config import Config
+    from hypercorn.asyncio import serve
+    
+    config = Config()
+    config.bind = [f"0.0.0.0:{port}"]
+    
+    print(f"[*] Starting Web Server on port {port}...")
+    
+    # اجرای همزمان سرور وب و ربات تلگرام در یک لوپ واحد
+    await asyncio.gather(
+        serve(app, config),
+        bot.run_until_disconnected()
+    )
+
+if __name__ == '__main__':
+    asyncio.run(main())
