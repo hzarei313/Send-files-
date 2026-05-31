@@ -1,3 +1,2 @@
 Telethon
-Flask
-hypercorn
+cryptography
