@@ -1,34 +1,50 @@
 import re
 import os
-import asyncio
 import sys
-from telethon import TelegramClient, events
-from telethon.sessions import MemorySession
+import asyncio
+import logging
 from collections import deque
+from telethon import TelegramClient, events, errors
+from telethon.sessions import StringSession
 
-# پیکربندی لایه بافر خروجی جهت ثبت آنی وقایع در کنسول سرور ابری Render
+# پیکربندی لایه بافر خروجی جهت ثبت آنی و بدون تاخیر وقایع در کنسول سرور ابری Render
 sys.stdout.reconfigure(line_buffering=True)
+
+# تنظیمات پیشرفته سیستم ثبت وقایع استاندارد پایتون برای پایش دقیق رفتار کلاینت
+logging.basicConfig(
+    format="[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s",
+    level=logging.WARNING
+)
+logger = logging.getLogger("CloudCoreLogger")
 
 # --- مقادیر ثابت و ساختارهای اتصال احراز هویت ---
 API_ID = 36850805        
 API_HASH = 'f3e90cffb1a5ca214883a0b886ad62b4'  
-BOT_TOKEN = '8968910927:AAGks2FRyPtu49l90LUAktvroaOgZ-8ELOk'  
+BOT_TOKEN = '314786408:AAHt1ifaI5wm-yGAUjFzNmOp9P7VgUet0KA'  
+
+# قرار دادن مستقیم کلید پایدار جهت هماهنگی کامل با سرور ابری رندر
+SESSION_STRING = '1BJWap1wBuyomtkYKifgnqGTpHRMg7JW5FQa_OH'
 
 SOURCE_GROUP_ID = -1001323267949  
 TARGET_CHANNEL_ID = -1002716670503  
 # ---------------------------------------------
 
-# بکارگیری بافر حلقوی با طول محدود جهت تضمین عدم نشت حافظه و پایش پیام‌های تکراری
+# استفاده از بافر حلقوی با طول محدود جهت تضمین عدم نشت حافظه در پردازش پیام‌ها
 processed_messages = deque(maxlen=200)
 
-# راه‌اندازی کلاینت بر پایه حافظه موقت (Memory Session) متناسب با ساختار توزیع‌شده سرورهای ابری
-bot = TelegramClient(MemorySession(), API_ID, API_HASH)
+# راه‌اندازی کلاینت بر پایه StringSession پایدار به همراه جعل هویت کاربر معمولی برای فایروال تلگرام
+bot = TelegramClient(
+    StringSession(SESSION_STRING), 
+    API_ID, 
+    API_HASH,
+    device_model="Desktop Client",
+    system_version="Windows 11",
+    app_version="4.12.3",
+    lang_code="fa"
+)
 
 async def handle_web_request(reader, writer):
-    """
-    پاسخ‌دهی به درخواست‌های ارزیابی سلامت بستر ابری (Health Check) بر اساس پروتکل HTTP/1.1.
-    استفاده از کاراکترهای اسکی پایان خط منطبق بر استاندارد RFC 7230.
-    """
+    """ پاسخ‌دهی به درخواست‌های ارزیابی سلامت بستر ابری (Health Check) """
     try:
         await reader.read(1024)
         response = (
@@ -41,72 +57,77 @@ async def handle_web_request(reader, writer):
         writer.write(response.encode('utf-8'))
         await writer.drain()
     except Exception as e:
-        print(f" Failed to respond to health check: {e}", flush=True)
+        logger.error(f"خطا در پاسخ‌دهی به ارزیابی سلامت سرور ابری: {e}")
     finally:
         writer.close()
 
+def generate_modified_caption(raw_text: str) -> str:
+    """ پردازش متن و ساختاردهی به کپشن نهایی """
+    caption = raw_text or ""
+    pattern = r'(@\w+|https?://[^\s]+|t\.me/[^\s]+)'
+    matches = list(re.finditer(pattern, caption))
+    
+    if matches:
+        last_match = matches[-1]
+        caption = caption[:last_match.start()] + "کاری از: " + caption[last_match.start():]
+    else:
+        caption = caption + "\n\nکاری از: " if caption else "کاری از: "
+        
+    final_caption = f"{caption}\n\n🆔 @tadvin_eslami"
+    return final_caption
+
 @bot.on(events.NewMessage(chats=SOURCE_GROUP_ID))
 async def handler(event):
-    """
-    مدیریت و شنود رویدادهای مربوط به پیام‌های جدید گروه مبدأ.
-    فیلتر و پایش ساختارهای مالتی‌مدیا و بازنویسی کپشن رسانه‌ها.
-    """
-    if event.message.video:
-        message_id = event.message.id
-        if message_id in processed_messages:
-            return
-        processed_messages.append(message_id)
-        
-        caption = event.message.text or ""
-        pattern = r'(@\w+|https?://[^\s]+|t\.me/[^\s]+)'
-        matches = list(re.finditer(pattern, caption))
-        
-        if matches:
-            last_match = matches[-1]
-            caption = caption[:last_match.start()] + "کاری از: " + caption[last_match.start():]
-        else:
-            caption = caption + "\n\nکاری از: " if caption else "کاری از: "
-            
-        final_caption = caption + "\n\n🆔 @tadvin_eslami"
-        
-        try:
-            # مهندسی مجدد کپشن بدون نقض امضای متد ارسال تلگرام
-            # جهش مستقیم بر روی خصیصه‌های شیء پیام جهت حفظ متادیتای اصلی ویدیو روی سرور تلگرام
-            event.message.message = final_caption
-            event.message.entities = None  # بازنشانی نهادهای متنی جهت دفع خطاهای احتمالی آفست کاراکتر
-            
-            await bot.send_message(
-                TARGET_CHANNEL_ID, 
-                event.message
-            )
-            print(f"[🟢 OK] Video {message_id} forwarded successfully with modified caption.", flush=True)
-        except Exception as e:
-            print(f"[🔴 Error] Cannot forward message {message_id}: {e}", flush=True)
+    """ مدیریت و شنود رویدادهای گروه مبدأ """
+    if not event.message.video:
+        return
+
+    message_id = event.message.id
+    if message_id in processed_messages:
+        return
+    processed_messages.append(message_id)
+    
+    original_caption = event.message.text or ""
+    final_caption = generate_modified_caption(original_caption)
+    
+    try:
+        await bot.send_file(
+            TARGET_CHANNEL_ID,
+            file=event.message.media,
+            caption=final_caption,
+            parse_mode='md'
+        )
+        print(f"[🟢 OK] ویدیو با شناسه {message_id} با موفقیت ارسال گردید.", flush=True)
+    except errors.FloodWaitError as e:
+        logger.warning(f"محدودیت نرخ ارسال فعال شد. تعلیق به مدت {e.seconds} ثانیه...")
+        await asyncio.sleep(e.seconds)
+    except errors.RPCError as e:
+        logger.error(f"خطای امنیتی تلگرام در پیام {message_id}: {e}")
+    except Exception as e:
+        logger.error(f"خطای غیرمنتظره در باز ارسال پیام {message_id}: {e}")
 
 async def main():
     port = int(os.environ.get('PORT', 10000))
-    print(f" Starting non-blocking Native Web Server on port {port}...", flush=True)
+    print(f"راه‌اندازی سرور وب ناهمگام بومی بر روی پورت {port}...", flush=True)
     server = await asyncio.start_server(handle_web_request, '0.0.0.0', port)
 
     async with server:
-        print(" Initiating secure connection to Telegram servers...", flush=True)
+        print("در حال تلاش برای برقراری اتصال ایمن به سرورهای تلگرام...", flush=True)
         try:
-            await asyncio.wait_for(bot.start(bot_token=BOT_TOKEN), timeout=15.0)
-            print(" Connection established and authenticated successfully!", flush=True)
+            await asyncio.wait_for(bot.start(bot_token=BOT_TOKEN), timeout=20.0)
+            print("اتصال و احراز هویت با موفقیت کامل انجام شد!", flush=True)
         except asyncio.TimeoutError:
-            print(" Connection handshake with Telegram timed out!", flush=True)
+            print("خطا: فرآیند دست‌دهی با سرورهای تلگرام منقضی گردید!", flush=True)
             return
         except Exception as e:
-            print(f" Client startup aborted due to initialization failure: {e}", flush=True)
+            print(f"خطای بحرانی در زمان شروع به کار ربات: {e}", flush=True)
             return
 
-        print("[🚀] Deployment initialization finished. Bot is actively monitoring...", flush=True)
-        
-        # بکارگیری بهینه‌ترین متد بومی برای فعال نگه داشتن موتور رویدادها بدون بارگذاری کاذب پردازنده
+        print("[🚀] ربات فعال شده و مانیتورینگ بدون وقفه با موفقیت آغاز گردید.", flush=True)
         await bot.run_until_disconnected()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n[🛑] Process terminated by administrator signal.", flush=True)
+        print("\n[🛑] پروسه توسط سیگنال ادمین متوقف گردید.", flush=True)
