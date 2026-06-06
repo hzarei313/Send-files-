@@ -22,8 +22,8 @@ API_ID = 36850805
 API_HASH = 'f3e90cffb1a5ca214883a0b886ad62b4'  
 BOT_TOKEN = '314786408:AAHt1ifaI5wm-yGAUjFzNmOp9P7VgUet0KA'  
 
-# قرار دادن مستقیم کلید پایدار جهت هماهنگی کامل با سرور ابری رندر
-SESSION_STRING = '1BJWap1wBuyomtkYKifgnqGTpHRMg7JW5FQa_OH'
+# قرار دادن رشته نشست کاملاً پایدار و اصلاح شده (بدون ارور پدینگ)
+SESSION_STRING = '1BJWap1wBuyomtkYKifgnqGTpHRMg7JW5FQa_OH-UryEMsHTzhWN8TcYWYYC4ZTQr2wtHfllb-NuA5to_LWndmoF3j9pKAzd-OeNZcp9C6GqQcNsBkkf-SNtAbARVEXaTVKC9GFK-goY6HRc3JqI9r9oXsvubC6EuHxF6Yk9bT-_gB7MV5aUc-kV37rpezvTledDtNuckDbILq7lXTZ2X5g-3MzYHs8zJUnaRn8NZGQWVswyUBVsH2gZXY3xvn1XAK2-KsaEhjiAZblEAZ5qT25VNtV_FIYw2LXilg1gcV5uPjklz7A8PUo6c0R83Un-e3t1j65iJy2fMzJE7NRxDvqtNChCYmMk='
 
 SOURCE_GROUP_ID = -1001323267949  
 TARGET_CHANNEL_ID = -1002716670503  
